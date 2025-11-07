@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>三人麻雀 点数計算 Pro（PWA/3人）</title>
+
+<!-- iPhone/PWA -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="三人麻雀 Pro">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+<style>
+:root { --gap: 12px; --radius: 12px; --shadow: 0 6px 22px rgba(0,0,0,.08); }
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+  margin:0; padding: 24px; background:#f6f7f9; color:#111; }
+h1 { margin: 0 0 8px; font-size: 22px; }
+h2 { margin: 0 0 8px; font-size: 18px; }
+p.lead { margin: 0 0 16px; color:#444; }
+.card { background:#fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; margin-bottom: 16px; }
+.grid { display: grid; gap: var(--gap); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid-3 { display: grid; gap: var(--gap); grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid-4 { display: grid; gap: var(--gap); grid-template-columns: repeat(4, minmax(0, 1fr)); }
+label { display:block; font-size: 13px; color:#333; margin-bottom: 6px; }
+input[type="text"], input[type="number"], select {
+  width:100%; padding:10px 12px; border-radius:10px; border:1px solid #ddd; background:#fff; font-size:16px;
+}
+.row { display:flex; gap:var(--gap); align-items:center; flex-wrap:wrap; }
+.chip { display:inline-flex; align-items:center; gap:8px; border:1px solid #ddd; border-radius:999px; padding:8px 12px; background:#fff; cursor:pointer; }
+.chip input { margin:0; }
+.actions { display:flex; gap:var(--gap); flex-wrap:wrap; }
+button { padding:10px 14px; border-radius:10px; border:0; cursor:pointer; background:#111; color:#fff; font-weight:600; box-shadow:var(--shadow); }
+button.ghost { background:#fff; color:#111; border:1px solid #ddd; }
+.pill { display:inline-block; background:#eef0f3; padding:3px 8px; border-radius:999px; font-size:12px; }
+.result { font-size: 18px; line-height: 1.6; }
+.muted { color:#666; font-size:13px; }
+hr { border:none; border-top:1px dashed #ddd; margin: 12px 0; }
+.table { width:100%; border-collapse: collapse; }
+.table th, .table td { border-bottom: 1px solid #eee; padding: 8px 6px; text-align:right; }
+.table th:first-child, .table td:first-child { text-align:left; }
+.badge { padding:2px 6px; border-radius:6px; font-size:12px; background:#eef; }
+.mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+.right { text-align:right; }
+.footer { color:#666; font-size:12px; }
+@media (max-width: 960px) { .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>三人麻雀 点数計算 Pro</h1>
+  <p class="lead">
+    <span class="pill">3人（東・南・西）</span>
+    <span class="pill">自動符計算</span>
+    <span class="pill">オカ/ウマ/精算</span>
+    <span class="pill">ダブル役満/複数役満</span>
+    <span class="pill">iPhoneホーム画面対応</span>
+  </p>
+</div>
+
+<!-- 基本入力 -->
+<div class="card">
+  <h2>1) 和了条件</h2>
+  <div class="grid-3">
+    <div><label>飜（はん）</label><input id="han" type="number" min="1" max="26" value="1"></div>
+    <div><label>符（ふ）<span class="muted">（自動計算ONなら無視）</span></label><input id="fu" type="number" min="20" max="120" step="1" value="30"></div>
+    <div><label>本場数</label><input id="honba" type="number" min="0" max="20" value="0"></div>
+  </div>
+  <div style="height:12px"></div>
+  <div class="row">
+    <label class="chip"><input id="isDealer" type="checkbox"> 親（東家）</label>
+    <label class="chip"><input name="method" type="radio" value="ron" checked> ロン</label>
+    <label class="chip"><input name="method" type="radio" value="tsumo"> ツモ</label>
+    <label class="chip"><input id="kiriage" type="checkbox" checked> 切り上げ満貫</label>
+    <label class="chip"><input id="autoFu" type="checkbox" checked> 自動符計算を使う</label>
+    <label class="chip"><input id="kyotaku" type="number" min="0" value="0" style="width:90px"> 供託（本）</label>
+  </div>
+</div>
+
+<!-- 自動符計算ブロック -->
+<div class="card" id="fuAutoCard">
+  <h2>2) 自動符計算</h2>
+  <div class="row">
+    <label class="chip"><input id="menzen" type="checkbox" checked> 門前（クローズ）</label>
+    <label class="chip"><input id="isChiitoi" type="checkbox"> 七対子（25符固定）</label>
+    <label class="chip"><input id="allSequences" type="checkbox"> 順子のみ（ピンフ候補）</label>
+  </div>
+  <div style="height:8px"></div>
+  <div class="grid-4">
+    <div><label>待ち形</label>
+      <select id="waitType">
+        <option value="ryanmen">両面（/シャンポン）</option>
+        <option value="kanchan">嵌張</option>
+        <option value="penchan">辺張</option>
+        <option value="tanki">単騎</option>
+      </select>
+    </div>
+    <div><label>雀頭（対子）</label>
+      <select id="pairType">
+        <option value="none">なし（数牌）</option>
+        <option value="dragon">三元牌</option>
+        <option value="seat">自風</option>
+        <option value="round">場風</option>
+        <option value="both">自風かつ場風</option>
+      </select>
+    </div>
+    <div><label>明刻（中張）</label><input id="pungOpenMid" type="number" min="0" max="4" value="0"></div>
+    <div><label>暗刻（中張）</label><input id="pungClosedMid" type="number" min="0" max="4" value="0"></div>
+    <div><label>明刻（老頭/字）</label><input id="pungOpenTerm" type="number" min="0" max="4" value="0"></div>
+    <div><label>暗刻（老頭/字）</label><input id="pungClosedTerm" type="number" min="0" max="4" value="0"></div>
+    <div><label>明槓（中張）</label><input id="kongOpenMid" type="number" min="0" max="4" value="0"></div>
+    <div><label>暗槓（中張）</label><input id="kongClosedMid" type="number" min="0" max="4" value="0"></div>
+    <div><label>明槓（老頭/字）</label><input id="kongOpenTerm" type="number" min="0" max="4" value="0"></div>
+    <div><label>暗槓（老頭/字）</label><input id="kongClosedTerm" type="number" min="0" max="4" value="0"></div>
+    <div class="muted" style="align-self:end;">※ピンフ候補ON時は刻子/槓子は無視（ピンフ判定のため）</div>
+  </div>
+  <div style="height:8px"></div>
+  <div class="actions">
+    <button class="ghost" onclick="autoFuNow()">符を計算して反映</button>
+    <div class="muted">ピンフ条件（門前・順子のみ・両面待ち・非役頭）ならツモでも20符、ロンは30符。</div>
+  </div>
+</div>
+
+<!-- 役満・上限カスタム -->
+<div class="card">
+  <h2>3) 上限・役満カスタム</h2>
+  <div class="row">
+    <label class="chip"><input id="treatKazoeYakuman" type="checkbox" checked> カゾエ役満（13飜以上）を役満扱い</label>
+    <label class="chip"><input id="enableMultiYakuman" type="checkbox"> 複数役満（ダブル等）を手動指定</label>
+    <label class="chip"><input id="multiYakumanCount" type="number" min="1" max="4" value="2" style="width:80px"> 指定役満数</label>
+  </div>
+  <div class="muted">※「手動指定」ON時は、飜数に関わらず <span class="mono">8000 × 役満数</span> を基礎点として計算します。</div>
+</div>
+
+<!-- 計算 -->
+<div class="card">
+  <h2>4) 点数計算</h2>
+  <div class="actions">
+    <button onclick="calc()">点数を計算</button>
+    <button class="ghost" onclick="preset(1)">例：子・30符1飜（ロン）</button>
+    <button class="ghost" onclick="preset(2)">例：親・40符2飜（ツモ）</button>
+    <button class="ghost" onclick="preset(3)">例：子・満貫（ロン）</button>
+  </div>
+  <div id="out" class="result" style="margin-top:10px;">結果がここに表示されます。</div>
+</div>
+
+<!-- スコアボード -->
+<div class="card">
+  <h2>5) スコアボード（オカ/ウマ対応・3人）</h2>
+  <div class="grid-3">
+    <div><label>東（親）</label><input id="nameE" type="text" value="東"></div>
+    <div><label>南</label><input id="nameS" type="text" value="南"></div>
+    <div><label>西</label><input id="nameW" type="text" value="西"></div>
+  </div>
+  <div style="height:8px"></div>
+  <div class="grid-3">
+    <div><label>配給原点（開始持ち点）</label><input id="startPts" type="number" value="35000"></div>
+    <div><label>返し（トップ返し目標）</label><input id="returnPts" type="number" value="35000"></div>
+    <div><label>ウマ（1位/2位/3位, 千点）</label>
+      <div class="row">
+        <input id="uma1" type="number" value="20" style="width:80px">
+        <input id="uma2" type="number" value="0" style="width:80px">
+        <input id="uma3" type="number" value="-20" style="width:80px">
+      </div>
+    </div>
+  </div>
+  <div class="row" style="margin-top:6px;">
+    <label class="chip"><input id="okaToTop" type="checkbox" checked> オカをトップに付与</label>
+  </div>
+
+  <div style="height:8px"></div>
+  <div class="actions">
+    <button onclick="initGame()">新しく開始（スコア初期化）</button>
+    <button class="ghost" onclick="exportLog()">ログをCSVで保存</button>
+  </div>
+
+  <div style="height:12px"></div>
+  <div class="grid-3">
+    <div><label>和了者</label>
+      <select id="winnerSeat">
+        <option value="E">東</option>
+        <option value="S">南</option>
+        <option value="W">西</option>
+      </select>
+    </div>
+    <div><label>放銃者（ロン時のみ）</label>
+      <select id="loserSeat">
+        <option value="">—</option>
+        <option value="E">東</option>
+        <option value="S">南</option>
+        <option value="W">西</option>
+      </select>
+    </div>
+    <div style="align-self:end;"><button onclick="applyToScoreboard()">↑ 計算結果をスコアに反映</button></div>
+  </div>
+
+  <div style="height:8px"></div>
+  <table class="table" id="scoreTable">
+    <thead><tr><th>プレイヤー</th><th class="right">持ち点</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <div style="height:8px"></div>
+  <div><strong>ハンドログ</strong></div>
+  <table class="table" id="logTable">
+    <thead><tr><th>#</th><th>内容</th><th class="right">点移動</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <div style="height:8px"></div>
+  <div class="actions">
+    <button class="ghost" onclick="settlement()">終局精算（オカ/ウマ）</button>
+  </div>
+</div>
+
+<div class="card footer">
+  <div>三麻用メモ</div>
+  <ul>
+    <li>座席は東・南・西の3人。北家は使用しません。</li>
+    <li>ツモ支払いは2人で負担（親ツモ：子2人が等分／子ツモ：親ともう一人の子が支払い）。</li>
+    <li>本場：ロン+300/本、ツモ+100/人・本（合計+200/本）。供託はアガリ取り切り（+1000/本）。</li>
+    <li>ローカル（萬子2-8抜き、北抜きドラ等）は別途オプション化可能です。</li>
+  </ul>
+</div>
+
+<script>
+const ceil100 = n => Math.ceil(n / 100) * 100;
+const fmt = n => n.toLocaleString('ja-JP');
+const int = v => Number(v || 0);
+function byId(id){ return document.getElementById(id); }
+
+function limitBase(han, fu, kiriage, opts) {
+  if (opts.enableMultiYakuman) {
+    const cnt = Math.max(1, opts.multiYakumanCount || 1);
+    return { base: 8000 * cnt, label: cnt === 1 ? "役満" : (cnt === 2 ? "ダブル役満" : (cnt + "倍役満")) };
+  }
+  if (opts.treatKazoeYakuman && han >= 13) return { base: 8000, label: "数え役満" };
+  if (han >= 11) return { base: 6000, label: "三倍満" };
+  if (han >= 8)  return { base: 4000, label: "倍満" };
+  if (han >= 6)  return { base: 3000, label: "跳満" };
+  if (han >= 5)  return { base: 2000, label: "満貫" };
+  if (han === 4 && fu >= 40) return { base: 2000, label: "満貫" };
+  if (han === 3 && fu >= 70) return { base: 2000, label: "満貫" };
+  if (kiriage && ((han === 4 && fu === 30) || (han === 3 && fu === 60))) {
+    return { base: 2000, label: "（切り上げ）満貫" };
+  }
+  return null;
+}
+
+function calcCore({ han, fu, isDealer, method, honba, kyotaku, kiriage, limitOpts }) {
+  han = Math.max(1, Number(han||0));
+  fu  = Math.max(20, Number(fu||0));
+  honba = Math.max(0, Number(honba||0));
+  kyotaku = Math.max(0, Number(kyotaku||0));
+
+  const limit = limitBase(han, fu, kiriage, limitOpts);
+  let base, label = "";
+  if (limit) { base = limit.base; label = limit.label; }
+  else { base = fu * Math.pow(2, han + 2); }
+
+  if (method === "ron") {
+    let pay = isDealer ? ceil100(base * 6) : ceil100(base * 4);
+    let hon = honba * 300;
+    let totalGet = pay + hon + kyotaku * 1000;
+    return {
+      headline: `ロン和了：${fmt(totalGet)} 点` + (label ? `（${label}）` : ""),
+      lines: [
+        `放銃者から ${fmt(pay)} 点`,
+        honba ? `本場 ${honba} 本で +${fmt(hon)} 点` : null,
+        kyotaku ? `供託 ${kyotaku} 本で +${fmt(kyotaku*1000)} 点` : null
+      ].filter(Boolean),
+      kind: "ron",
+      numbers: { payFromDiscarder: pay, honbaPay: hon, kyotakuGet: kyotaku*1000, base, label }
+    };
+  } else {
+    if (isDealer) {
+      let each = ceil100(base * 2);
+      let eachWithHon = each + honba * 100;
+      let totalGet = eachWithHon * 2 + kyotaku * 1000;
+      return {
+        headline: `ツモ和了：各 ${fmt(eachWithHon)} 点（子2人）　合計 ${fmt(totalGet)} 点` + (label ? `（${label}）` : ""),
+        lines: [
+          `子2人から各 ${fmt(eachWithHon)} 点（内訳：基本 ${fmt(each)} + 本場 ${honba?fmt(honba*100):"0"}）`,
+          kyotaku ? `供託 ${kyotaku} 本で +${fmt(kyotaku*1000)} 点` : null
+        ].filter(Boolean),
+        kind: "tsumoDealer3p",
+        numbers: { eachPays: eachWithHon, kyotakuGet: kyotaku*1000, base, label }
+      };
+    } else {
+      let payDealer = ceil100(base * 2);
+      let payChild  = ceil100(base * 1);
+      let payDealerWithHon = payDealer + honba * 100;
+      let payChildWithHon  = payChild + honba * 100;
+      let totalGet = payDealerWithHon + payChildWithHon + kyotaku * 1000;
+      return {
+        headline: `ツモ和了：親 ${fmt(payDealerWithHon)} / 子 ${fmt(payChildWithHon)}　合計 ${fmt(totalGet)} 点` + (label ? `（${label}）` : ""),
+        lines: [
+          `親から ${fmt(payDealerWithHon)} 点（基本 ${fmt(payDealer)} + 本場 ${honba?fmt(honba*100):"0"}）`,
+          `他の子から ${fmt(payChildWithHon)} 点（基本 ${fmt(payChild)} + 本場 ${honba?fmt(honba*100):"0"}）`,
+          kyotaku ? `供託 ${kyotaku} 本で +${fmt(kyotaku*1000)} 点` : null
+        ].filter(Boolean),
+        kind: "tsumoChild3p",
+        numbers: { dealerPays: payDealerWithHon, childPays: payChildWithHon, kyotakuGet: kyotaku*1000, base, label }
+      };
+    }
+  }
+}
+
+// ====== 自動符計算 ======
+function calcFuAuto({ menzen, isChiitoi, allSequences, waitType, pairType, pCounts, method }) {
+  if (isChiitoi) return { fu: 25, detail: ["七対子 25符（固定・切り上げなし）"], pinfu: false };
+  const pinfuCandidate = menzen && allSequences && waitType === "ryanmen" && (pairType === "none");
+  if (pinfuCandidate) {
+    if (method === "tsumo") {
+      return { fu: 20, detail: ["ピンフツモ 20符（ツモ2符なし）"], pinfu: true };
+    } else {
+      return { fu: 30, detail: ["ピンフ門前ロン 30符（20符+門前ロン10符）"], pinfu: true };
+    }
+  }
+  let fu = 20;
+  const detail = [];
+  if (method === "tsumo") { fu += 2; detail.push("ツモ +2"); }
+  else if (menzen) { fu += 10; detail.push("門前ロン +10"); }
+  if (waitType === "kanchan") { fu += 2; detail.push("嵌張待ち +2"); }
+  else if (waitType === "penchan") { fu += 2; detail.push("辺張待ち +2"); }
+  else if (waitType === "tanki") { fu += 2; detail.push("単騎待ち +2"); }
+  if (pairType === "dragon") { fu += 2; detail.push("三元牌の雀頭 +2"); }
+  else if (pairType === "seat") { fu += 2; detail.push("自風の雀頭 +2"); }
+  else if (pairType === "round") { fu += 2; detail.push("場風の雀頭 +2"); }
+  else if (pairType === "both") { fu += 4; detail.push("自風かつ場風の雀頭 +4"); }
+  if (!allSequences) {
+    const { pungOpenMid, pungClosedMid, pungOpenTerm, pungClosedTerm, kongOpenMid, kongClosedMid, kongOpenTerm, kongClosedTerm } = pCounts;
+    fu += pungOpenMid * 2;     if (pungOpenMid) detail.push(`明刻（中張）×${pungOpenMid} +${2*pungOpenMid}`);
+    fu += pungClosedMid * 4;   if (pungClosedMid) detail.push(`暗刻（中張）×${pungClosedMid} +${4*pungClosedMid}`);
+    fu += pungOpenTerm * 4;    if (pungOpenTerm) detail.push(`明刻（老頭/字）×${pungOpenTerm} +${4*pungOpenTerm}`);
+    fu += pungClosedTerm * 8;  if (pungClosedTerm) detail.push(`暗刻（老頭/字）×${pungClosedTerm} +${8*pungClosedTerm}`);
+    fu += kongOpenMid * 8;     if (kongOpenMid) detail.push(`明槓（中張）×${kongOpenMid} +${8*kongOpenMid}`);
+    fu += kongClosedMid * 16;  if (kongClosedMid) detail.push(`暗槓（中張）×${kongClosedMid} +${16*kongClosedMid}`);
+    fu += kongOpenTerm * 16;   if (kongOpenTerm) detail.push(`明槓（老頭/字）×${kongOpenTerm} +${16*kongOpenTerm}`);
+    fu += kongClosedTerm * 32; if (kongClosedTerm) detail.push(`暗槓（老頭/字）×${kongClosedTerm} +${32*kongClosedTerm}`);
+  }
+  const fuRounded = Math.ceil(fu / 10) * 10;
+  if (fuRounded !== fu) detail.push(`→ 符切り上げ ${fu} → ${fuRounded}`);
+  return { fu: fuRounded, detail, pinfu: false };
+}
+
+function autoFuNow() {
+  const res = calcFuAuto({
+    menzen: byId('menzen').checked,
+    isChiitoi: byId('isChiitoi').checked,
+    allSequences: byId('allSequences').checked,
+    waitType: byId('waitType').value,
+    pairType: byId('pairType').value,
+    method: [...document.querySelectorAll('input[name="method"]')].find(r => r.checked).value,
+    pCounts: {
+      pungOpenMid: int(byId('pungOpenMid').value),
+      pungClosedMid: int(byId('pungClosedMid').value),
+      pungOpenTerm: int(byId('pungOpenTerm').value),
+      pungClosedTerm: int(byId('pungClosedTerm').value),
+      kongOpenMid: int(byId('kongOpenMid').value),
+      kongClosedMid: int(byId('kongClosedMid').value),
+      kongOpenTerm: int(byId('kongOpenTerm').value),
+      kongClosedTerm: int(byId('kongClosedTerm').value),
+    }
+  });
+  byId('fu').value = res.fu;
+  const out = byId('out');
+  const details = `<div class="muted">${res.detail.map(x => `<span class="pill">${x}</span>`).join(" ")}</div>`;
+  out.innerHTML = `<div><strong class="mono">自動計算：${res.fu} 符</strong>${res.pinfu ? ' <span class="badge">ピンフ</span>' : ''}</div>` + details;
+}
+
+function calc() {
+  const autoFu = byId('autoFu').checked;
+  if (autoFu) autoFuNow();
+
+  const han = byId('han').value;
+  const fu  = byId('fu').value;
+  const honba = byId('honba').value;
+  const isDealer = byId('isDealer').checked;
+  const method = [...document.querySelectorAll('input[name="method"]')].find(r => r.checked).value;
+  const kiriage = byId('kiriage').checked;
+  const kyotaku = byId('kyotaku').value;
+
+  const limitOpts = {
+    treatKazoeYakuman: byId('treatKazoeYakuman').checked,
+    enableMultiYakuman: byId('enableMultiYakuman').checked,
+    multiYakumanCount: Number(byId('multiYakumanCount').value || 1)
+  };
+
+  const res = calcCore({ han, fu, isDealer, method, honba, kyotaku, kiriage, limitOpts });
+
+  const tags = [
+    `${isDealer ? "親" : "子"}`, `${method.toUpperCase()}`, `${fu}符`, `${han}飜`,
+    kiriage ? "切り上げ満貫ON" : "切り上げ満貫OFF",
+    limitOpts.enableMultiYakuman ? `手動 ${limitOpts.multiYakumanCount}倍役満` : (limitOpts.treatKazoeYakuman ? "数え役満ON" : "数え役満OFF")
+  ];
+
+  byId('out').innerHTML = [
+    `<div><strong class="mono">${res.headline}</strong></div>`,
+    `<ul>${res.lines.map(l => `<li>${l}</li>`).join("")}</ul>`,
+    `<div class="muted">条件：${tags.map(t => `<span class="pill">${t}</span>`).join(" ")}</div>`
+  ].join("<hr>");
+  window.__lastCalc = res;
+}
+
+// プリセット
+function preset(n) {
+  if (n === 1) {
+    byId('isDealer').checked = false;
+    document.querySelector('input[value="ron"]').checked = true;
+    byId('han').value = 1; byId('fu').value = 30;
+    byId('honba').value = 0; byId('kyotaku').value = 0;
+    byId('kiriage').checked = true;
+    byId('menzen').checked = true; byId('allSequences').checked = false; byId('isChiitoi').checked=false;
+  }
+  if (n === 2) {
+    byId('isDealer').checked = true;
+    document.querySelector('input[value="tsumo"]').checked = true;
+    byId('han').value = 2; byId('fu').value = 40;
+    byId('honba').value = 0; byId('kyotaku').value = 0;
+    byId('kiriage').checked = true;
+    byId('menzen').checked = true; byId('allSequences').checked = false; byId('isChiitoi').checked=false;
+  }
+  if (n === 3) {
+    byId('isDealer').checked = false;
+    document.querySelector('input[value="ron"]').checked = true;
+    byId('han').value = 5; byId('fu').value = 30;
+    byId('honba').value = 0; byId('kyotaku').value = 0;
+    byId('kiriage').checked = true;
+    byId('menzen').checked = true; byId('allSequences').checked = false; byId('isChiitoi').checked=false;
+  }
+  calc();
+}
+
+// ====== スコアボード（3人） ======
+const seats = ["E","S","W"];
+let scores = [35000,35000,35000];
+let log = [];
+
+function nameOf(seat){
+  if (seat === "E") return byId('nameE').value || "東";
+  if (seat === "S") return byId('nameS').value || "南";
+  if (seat === "W") return byId('nameW').value || "西";
+  return seat;
+}
+
+function renderScoreboard(){
+  const tbody = byId('scoreTable').querySelector('tbody');
+  tbody.innerHTML = "";
+  const names = [byId('nameE').value, byId('nameS').value, byId('nameW').value];
+  for (let i=0; i<3; i++){
+    const tr = document.createElement('tr');
+    const td1 = document.createElement('td'); td1.textContent = names[i] || seats[i];
+    const td2 = document.createElement('td'); td2.className = "right mono"; td2.textContent = fmt(scores[i]);
+    tr.appendChild(td1); tr.appendChild(td2); tbody.appendChild(tr);
+  }
+
+  const ltbody = byId('logTable').querySelector('tbody');
+  ltbody.innerHTML = "";
+  log.forEach((row, idx) => {
+    const tr = document.createElement('tr');
+    const td1 = document.createElement('td'); td1.textContent = idx+1;
+    const td2 = document.createElement('td'); td2.innerHTML = row.desc;
+    const td3 = document.createElement('td'); td3.className = "right mono"; td3.textContent = row.deltaTxt;
+    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+    ltbody.appendChild(tr);
+  });
+}
+
+function initGame(){
+  scores = [int(byId('startPts').value), int(byId('startPts').value), int(byId('startPts').value)];
+  log = [];
+  renderScoreboard();
+}
+
+function seatIndex(seat){ return {"E":0,"S":1,"W":2}[seat]; }
+
+function applyToScoreboard(){
+  const res = window.__lastCalc;
+  if (!res) { alert("先に点数を計算してください。"); return; }
+
+  const winnerSeat = byId('winnerSeat').value;
+  const wIdx = seatIndex(winnerSeat);
+  const method = res.kind;
+  let delta = [0,0,0];
+  let desc = "";
+
+  if (method === "ron") {
+    const loserSeat = byId('loserSeat').value;
+    if (!loserSeat){ alert("ロンの場合は放銃者を選んでください。"); return; }
+    const lIdx = seatIndex(loserSeat);
+    if (lIdx === wIdx){ alert("和了者と放銃者が同じです。"); return; }
+    delta[wIdx] += res.numbers.payFromDiscarder + res.numbers.honbaPay + res.numbers.kyotakuGet;
+    delta[lIdx] -= res.numbers.payFromDiscarder + res.numbers.honbaPay;
+    desc = `${nameOf(winnerSeat)} ロン和了（${nameOf(loserSeat)} 放銃） <span class="pill">${res.numbers.label || ""}</span>`;
+  } else if (method === "tsumoDealer3p") {
+    // 親ツモ：子2人が等分
+    seats.forEach((s, i) => {
+      if (i === wIdx) delta[i] += res.numbers.eachPays * 2 + res.numbers.kyotakuGet;
+      else delta[i] -= res.numbers.eachPays;
+    });
+    desc = `${nameOf(winnerSeat)} ツモ（親） <span class="pill">${res.numbers.label || ""}</span>`;
+  } else if (method === "tsumoChild3p") {
+    // 子ツモ：親ともう一人の子が支払い
+    const dIdx = 0; // 東=親
+    seats.forEach((s, i) => {
+      if (i === wIdx) {
+        delta[i] += (res.numbers.dealerPays + res.numbers.childPays) + res.numbers.kyotakuGet;
+      } else if (i === dIdx) {
+        delta[i] -= res.numbers.dealerPays;
+      } else {
+        // 残りの1人（子）
+        delta[i] -= res.numbers.childPays;
+      }
+    });
+    desc = `${nameOf(winnerSeat)} ツモ（子） <span class="pill">${res.numbers.label || ""}</span>`;
+  }
+
+  for (let i=0; i<3; i++) scores[i] += delta[i];
+
+  const deltaTxt = delta.map((d,i)=>`${nameOf(seats[i])}:${d>0?"+":""}${fmt(d)}`).join(" / ");
+  log.push({ desc, deltaTxt, delta });
+
+  renderScoreboard();
+}
+
+function settlement(){
+  const names = [nameOf("E"), nameOf("S"), nameOf("W")];
+  const returnPts = int(byId('returnPts').value);
+  const startPts  = int(byId('startPts').value);
+  const okaToTop  = byId('okaToTop').checked;
+  const uma = [int(byId('uma1').value), int(byId('uma2').value), int(byId('uma3').value)];
+
+  // ランキング
+  const ranks = [0,1,2].sort((a,b)=>scores[b]-scores[a]);
+  const sortedScores = ranks.map(i=>scores[i]);
+
+  // 同点のウマ平均
+  const umaByPlayer = new Array(3).fill(0);
+  for (let pos=0; pos<3; ) {
+    let end = pos;
+    while (end+1<3 && sortedScores[end+1] === sortedScores[pos]) end++;
+    const positions = [];
+    for (let p = pos; p<=end; p++) positions.push(p);
+    const umaAvg = positions.reduce((s,p)=>s+uma[p],0) / positions.length;
+    for (let p = pos; p<=end; p++) { umaByPlayer[ranks[p]] = umaAvg; }
+    pos = end + 1;
+  }
+
+  // オカをトップに
+  let okaPtPerWinner = 0;
+  if (okaToTop) {
+    const okaRaw = (returnPts - startPts) * 3; // 差 × 人数
+    // トップ同点なら等分
+    let topCount = 1;
+    if (sortedScores[1] === sortedScores[0]) topCount = 2;
+    okaPtPerWinner = okaRaw / topCount / 1000;
+  }
+
+  const results = [0,1,2].map(i => {
+    const base = (scores[i] - returnPts) / 1000;
+    const addUma = umaByPlayer[i];
+    const addOka = (ranks[0] === i && okaToTop) ? okaPtPerWinner : 0;
+    const pt = base + addUma + addOka;
+    return { name:names[i], seat:seats[i], score:scores[i], pt };
+  }).sort((a,b)=>b.score-a.score);
+
+  const lines = results.map((r,idx)=>{
+    const place = ["1位","2位","3位"][idx];
+    return `${place} ${r.name}（${r.seat}） 持ち点 ${fmt(r.score)} → 精算 ${r.pt.toFixed(1)}（万点）`;
+  }).join("\\n");
+  alert("終局精算\\n\\n" + lines);
+}
+
+function exportLog(){
+  let csv = "No,Desc,DeltaEast,DeltaSouth,DeltaWest,AfterEast,AfterSouth,AfterWest\\n";
+  let running = [int(byId('startPts').value), int(byId('startPts').value), int(byId('startPts').value)];
+  log.forEach((row, idx) => {
+    const d = row.delta;
+    for (let i=0;i<3;i++) running[i]+=d[i];
+    csv += `${idx+1},"${row.desc.replace(/"/g,'""')}",${d[0]},${d[1]},${d[2]},${running[0]},${running[1]},${running[2]}\\n`;
+  });
+  const blob = new Blob([csv], {type:"text/csv"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = "sanma_log.csv"; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+
+// 初期表示
+initGame();
+calc();
+
+// 自動符エリアの表示制御
+function toggleFuAutoCard(){
+  const show = byId('autoFu').checked;
+  byId('fuAutoCard').style.display = show ? "" : "none";
+}
+byId('autoFu').addEventListener('change', toggleFuAutoCard);
+toggleFuAutoCard();
+</script>
+
+<!-- SW registration -->
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('./service-worker.js').catch(function(e){ console.log('SW reg failed', e); });
+  });
+}
+</script>
+
+</body>
+</html>
